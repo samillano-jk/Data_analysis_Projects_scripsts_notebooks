@@ -9,10 +9,8 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-/* The dataset used in this analysis is from the divvy website of Lyft Bikes and Scooters (LLC) */
-
 ## Business Task
-### Find out how annual members and casual riders use bikes differently
+### Find out how annual members and casual riders use Cyclistic bikes differently
 
 
 
@@ -56,7 +54,7 @@ df02_24 <- read_csv("C:/Users/samil/Downloads/Cyclistic_Bikeshare_Trips_202303_t
 <br>
 
 
-## Data Wrangling 
+## Data Cleaning
 
 Checking the structure of each dataframes
 
@@ -69,10 +67,6 @@ for(data in datasets) {
   glimpse(data)
   
 }
-
-
-
-
 
 ```
 
@@ -94,9 +88,9 @@ Filtering the data needed for analysis. Adding the day, month, year, and ride_le
 
 ```{r}
 all_trips <- all_trips %>%
-  select(-start_lng, -start_lat, -end_lat, -end_lng, -start_station_name, -start_station_id, -end_station_name, -end_station_id) %>% 
+  select(-end_lat, -end_lng, -start_station_id, -end_station_name, -end_station_id) %>%
   mutate(ride_length=ended_at - started_at, day=format(as.Date(started_at), "%A"), month=format(as.Date(started_at), "%B"), year= year(started_at)) %>% 
-  select(-ended_at, -started_at)
+  select(-ended_at)
 ```
 
 
@@ -191,12 +185,8 @@ all_trips %>%
   arrange(-ride_length)
 
 ```
-Here we can see that the ride_length is unreasonably long that it takes 5 million seconds or 68 days
-
-The same goes for other data points and this needs further analysis and inquiries about the data 
-There are 1078 rows of data points so were removing it for now until further clarification
-
-So we're only going to take ride_length that doesn't exceed 1 day
+Here we can see that the maximum ride_length takes 68 days which is normal for long bike travels.
+And there are only 1078 rows out of 5 million, so it doesn't look abnormal
 
 <br>
 
@@ -204,7 +194,7 @@ Here we filter out ride_length that are zero and negative and also ride_length t
 ``` {r}
 
 all_trips_v2 <- all_trips %>% 
-  filter(ride_length > 0 & ride_length <= 100000)
+  filter(ride_length > 0 )
 
 
 ```
@@ -227,7 +217,7 @@ Now where done with the cleaning process
 summary(all_trips_v2$ride_length)
 ```
 
-First, making a summarization of ride_length per member_casual
+Making a summarization of ride_length per member_casual
 ```{r}
 basic_summary <- all_trips_v2 %>% 
   group_by(member_casual) %>% 
@@ -251,6 +241,7 @@ all_trips_v2 %>%
 
 ```
 
+
 #### Plot
 ```{r Ride length, message=FALSE, warning=FALSE, echo=FALSE}
 all_trips_v2 %>% 
@@ -264,10 +255,84 @@ ggplot(aes(day, num_rides, fill=member_casual)) + geom_col(position="dodge") + s
 ```
 Here we can see that annual members have higher number of rides compared to casual users and that annual members have an increase in number of rides during weekdays, the opposite of casual users
 
+<br>
+
+Popular station for member and casual users
+```{r member_pop_station}
+member_pop_station <- all_trips_v2 %>% 
+  select(member_casual, start_station_name, day, started_at) %>% 
+  filter(!is.na(start_station_name)) %>% 
+  # mutate(time=hour(started_at)) %>%
+  filter(member_casual=="member") %>%
+  group_by(start_station_name) %>% 
+  summarize(total_rides=n(), .groups="drop") %>% 
+  arrange(-total_rides) 
+
+
+  
+# 
+# View(member_pop_station)
+
+
+```
+We didn't include the NA values for the start_station_name, 
+but we can still use this to see what stations have more starting ride trips made
+To understand what location have higher volume of bike users. 
+We can also ask about the data from the owner
+
+
+
+``` {r casual_pop_station}
+
+casual_pop_station <- all_trips %>% 
+  select(member_casual, start_station_name, day, started_at) %>% 
+  filter(!is.na(start_station_name)) %>% 
+  group_by(start_station_name, member_casual) %>% 
+  summarize(total_rides=n()) %>% 
+  filter(member_casual=="casual") %>% 
+  arrange(-total_rides) %>% 
+  head(20) 
+
+
+# View(casual_pop_station)
+
+```
 
 <br>
 
 
+Peak hours 
+During weekdays for annual members and weekends for casual users
+```{r member_time}
+
+member_time <- all_trips_v2 %>% 
+  select(member_casual, started_at, day) %>% 
+  filter(day!="Saturday" & day!="Sunday") %>% 
+  filter(member_casual=="member") %>% 
+  mutate(time=hour(started_at)) %>% 
+  group_by(day, time) %>% 
+  summarise(rides=n()) %>% 
+  arrange(day, time) 
+
+    
+# View(member_time)
+
+```
+
+```{r casual_time}
+
+casual_time <- all_trips_v2 %>% 
+  select(member_casual, started_at, day) %>% 
+  filter(day=="Saturday" | day=="Sunday") %>% 
+  filter(member_casual=="casual") %>% 
+  mutate(time=hour(started_at)) %>% 
+  group_by(day, time) %>% 
+  summarise(rides=n()) %>% 
+  arrange(day, time) 
+
+```
+
+<br>
 
 ### Average ride duration: Casual vs Member
 ```{r , echo=FALSE, message=FALSE, warning=FALSE}
@@ -277,15 +342,11 @@ all_trips_v2 %>%
   summarize(num_rides = length(ride_id), mean_ride=mean(ride_length)) %>% 
 ggplot(aes(day, mean_ride, fill=member_casual)) + geom_col(position="dodge")
 
- 
-
 ```
-
-
 Here we can see that casual riders have longer rides compared to annual members and higher ride length on weekends
 
 
-Saving the summaries for visualization
+
 ```{r}
 ride_length <- all_trips_v2 %>% 
   group_by(member_casual, day) %>% 
@@ -298,22 +359,15 @@ overall_trips <- all_trips_v2 %>%
   summarize(num_trips=length(ride_id), mean_ride_length=mean(ride_length), .groups="drop") %>% 
   arrange(day, member_casual)
 
-
-# write.csv(ride_length, file = "avg_ride_length.csv")
-# write.csv(overall_trips, file = "total_trips.csv")
-
 ```
 
 
 
 Summarizing the data for member and casual user choice of bike type and average ride (seconds) in a year
 ```{r}
-all_trips_v2 %>% 
+rideable_type <- all_trips_v2 %>% 
   group_by(member_casual, rideable_type) %>% 
   summarize(bike_count=length(rideable_type), avg_ride=mean(ride_length), .groups="drop")
-  
-
-  # write.csv(file="rideable_type.csv")
 
 ```
 
@@ -323,8 +377,28 @@ all_trips_v2 %>%
   group_by(member_casual) %>% 
   summarize(num_trips = length(ride_id), mean_ride_length=mean(ride_length)) %>% 
   mutate(total = num_trips*mean_ride_length)
+
 ```
 
+```{r saving summaries}
+
+
+write.csv(ride_length, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/avg_ride_length.csv", row.names=FALSE)
+
+write.csv(overall_trips, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/total_trips.csv", row.names=FALSE)
+
+write.csv(member_pop_station, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/member_pop_station.csv", row.names=FALSE)
+
+write.csv(member_time, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/member_time.csv", row.names=FALSE)
+
+write.csv(casual_pop_station, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/casual_pop_station.csv", row.names=FALSE)
+
+write.csv(casual_time, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/casual_time.csv", row.names=FALSE)
+
+write.csv(rideable_type, file="C:/Users/samil/Downloads/Analysis_Cyclistic_Bikeshare/summaries_for_visual/rideable_type.csv", row.names=FALSE)
+
+
+```
 
 
 
